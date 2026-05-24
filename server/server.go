@@ -1439,6 +1439,18 @@ func AttachDuckLake(db *sql.DB, dlCfg DuckLakeConfig, sem chan struct{}, dataDir
 		slog.Info("Routed httpfs traffic through forward HTTP proxy.", "proxy", dlCfg.HTTPProxy)
 	}
 
+	// Azure Blob Storage requires the curl transport backend. DuckDB's default
+	// (which may use a built-in HTTP client) doesn't work reliably with Azure's
+	// TLS configuration. Set this BEFORE the ATTACH so it's in effect for the
+	// initial catalog read.
+	if isAzureObjectStore(dlCfg.ObjectStore) {
+		if _, err := db.Exec("SET GLOBAL azure_transport_option_type = 'curl'"); err != nil {
+			slog.Warn("Failed to set azure_transport_option_type.", "error", err)
+		} else {
+			slog.Info("Set azure_transport_option_type to curl for Azure Blob Storage.")
+		}
+	}
+
 	// Warn if metadata store appears to connect via pgbouncer.
 	// pgbouncer's connection lifecycle management (idle timeout, server_lifetime, etc.)
 	// can kill connections that DuckLake's internal metadata database depends on,
