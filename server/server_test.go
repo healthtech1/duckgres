@@ -186,6 +186,16 @@ func TestNeedsCredentialRefresh(t *testing.T) {
 			DuckLakeConfig{},
 			false,
 		},
+		{
+			"azure object store with credential_chain",
+			DuckLakeConfig{ObjectStore: "azure://data/", AzureAccountName: "myaccount"},
+			false,
+		},
+		{
+			"az:// object store",
+			DuckLakeConfig{ObjectStore: "az://container/"},
+			false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -389,6 +399,16 @@ func TestStartCredentialRefresh_NoOpForStaticCredentials(t *testing.T) {
 
 func TestStartCredentialRefresh_NoOpForNoObjectStore(t *testing.T) {
 	stop := StartCredentialRefresh(nil, DuckLakeConfig{})
+	stop() // Should not panic
+}
+
+func TestStartCredentialRefresh_NoOpForAzureObjectStore(t *testing.T) {
+	// Azure credential refresh is handled internally by DuckDB's azure extension
+	// via the Azure C++ SDK, so StartCredentialRefresh should be a no-op.
+	stop := StartCredentialRefresh(nil, DuckLakeConfig{
+		ObjectStore:      "azure://data/",
+		AzureAccountName: "myaccount",
+	})
 	stop() // Should not panic
 }
 

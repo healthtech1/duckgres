@@ -350,6 +350,15 @@ func ResolveEffective(fileCfg *configloader.FileConfig, cli CLIInputs, getenv fu
 		if fileCfg.DuckLake.S3Profile != "" {
 			cfg.DuckLake.S3Profile = fileCfg.DuckLake.S3Profile
 		}
+		if fileCfg.DuckLake.AzureProvider != "" {
+			cfg.DuckLake.AzureProvider = fileCfg.DuckLake.AzureProvider
+		}
+		if fileCfg.DuckLake.AzureAccountName != "" {
+			cfg.DuckLake.AzureAccountName = fileCfg.DuckLake.AzureAccountName
+		}
+		if fileCfg.DuckLake.AzureChain != "" {
+			cfg.DuckLake.AzureChain = fileCfg.DuckLake.AzureChain
+		}
 		if fileCfg.DuckLake.CheckpointInterval != "" {
 			if d, err := time.ParseDuration(fileCfg.DuckLake.CheckpointInterval); err == nil {
 				cfg.DuckLake.CheckpointInterval = d
@@ -656,6 +665,15 @@ func ResolveEffective(fileCfg *configloader.FileConfig, cli CLIInputs, getenv fu
 	}
 	if v := getenv("DUCKGRES_DUCKLAKE_S3_PROFILE"); v != "" {
 		cfg.DuckLake.S3Profile = v
+	}
+	if v := getenv("DUCKGRES_DUCKLAKE_AZURE_PROVIDER"); v != "" {
+		cfg.DuckLake.AzureProvider = v
+	}
+	if v := getenv("DUCKGRES_DUCKLAKE_AZURE_ACCOUNT_NAME"); v != "" {
+		cfg.DuckLake.AzureAccountName = v
+	}
+	if v := getenv("DUCKGRES_DUCKLAKE_AZURE_CHAIN"); v != "" {
+		cfg.DuckLake.AzureChain = v
 	}
 	if v := getenv("DUCKGRES_FILE_PERSISTENCE"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
