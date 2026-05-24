@@ -72,6 +72,11 @@ type Config struct {
 	// Default: checks all sources in Azure SDK order.
 	AzureChain string
 
+	// Azure managed identity client ID. Required when using the
+	// managed_identity provider with a user-assigned managed identity.
+	// Maps to the CLIENT_ID parameter on the DuckDB azure secret.
+	AzureClientID string
+
 	// HTTPProxy routes DuckDB httpfs traffic through a forward HTTP proxy.
 	// When set, DuckDB signs S3 requests for the real S3 hostname and sends them
 	// through the proxy as plain HTTP (requires S3UseSSL=false). Used by the

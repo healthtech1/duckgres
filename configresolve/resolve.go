@@ -359,6 +359,9 @@ func ResolveEffective(fileCfg *configloader.FileConfig, cli CLIInputs, getenv fu
 		if fileCfg.DuckLake.AzureChain != "" {
 			cfg.DuckLake.AzureChain = fileCfg.DuckLake.AzureChain
 		}
+		if fileCfg.DuckLake.AzureClientID != "" {
+			cfg.DuckLake.AzureClientID = fileCfg.DuckLake.AzureClientID
+		}
 		if fileCfg.DuckLake.CheckpointInterval != "" {
 			if d, err := time.ParseDuration(fileCfg.DuckLake.CheckpointInterval); err == nil {
 				cfg.DuckLake.CheckpointInterval = d
@@ -674,6 +677,9 @@ func ResolveEffective(fileCfg *configloader.FileConfig, cli CLIInputs, getenv fu
 	}
 	if v := getenv("DUCKGRES_DUCKLAKE_AZURE_CHAIN"); v != "" {
 		cfg.DuckLake.AzureChain = v
+	}
+	if v := getenv("DUCKGRES_DUCKLAKE_AZURE_CLIENT_ID"); v != "" {
+		cfg.DuckLake.AzureClientID = v
 	}
 	if v := getenv("DUCKGRES_FILE_PERSISTENCE"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
