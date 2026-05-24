@@ -96,6 +96,16 @@ ducklake:
   # s3_profile: "my-profile"           # AWS profile name (for config chain)
   # s3_region: "us-west-2"             # Override auto-detected region
 
+  # Option 3: Azure Blob Storage (for azure:// object stores)
+  # Uses DuckDB's azure extension with credential_chain provider. The Azure C++
+  # SDK handles token lifecycle (acquisition + refresh) automatically via managed
+  # identity, workload identity, CLI credentials, or environment variables.
+  # Requires "azure" in the extensions list above.
+  # object_store: "azure://container-name/"
+  # azure_account_name: "mystorageaccount"
+  # azure_provider: "credential_chain"  # Default. Also supports "access_token"
+  # azure_chain: "managed_identity"     # Restrict to specific credential sources
+
 # DuckDB resource limits per session (standalone mode)
 # Auto-detected from system memory if not set.
 # memory_limit: "4GB"

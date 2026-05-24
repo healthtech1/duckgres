@@ -58,6 +58,20 @@ type Config struct {
 	S3Chain   string // e.g., "env;config" to check env vars then config files
 	S3Profile string // AWS profile name to use (for "config" chain)
 
+	// Azure credential provider: "credential_chain" (managed identity, CLI, etc.)
+	// or "access_token" (explicit token). Default: "credential_chain".
+	AzureProvider string
+
+	// Azure storage account name (e.g., "mystorageaccount").
+	// Required when using azure:// DATA_PATH.
+	AzureAccountName string
+
+	// Azure credential chain configuration. Semicolon-separated list of
+	// credential sources to check. Options: cli, managed_identity,
+	// workload_identity, env, default.
+	// Default: checks all sources in Azure SDK order.
+	AzureChain string
+
 	// HTTPProxy routes DuckDB httpfs traffic through a forward HTTP proxy.
 	// When set, DuckDB signs S3 requests for the real S3 hostname and sends them
 	// through the proxy as plain HTTP (requires S3UseSSL=false). Used by the

@@ -1381,20 +1381,29 @@ func AttachDuckLake(db *sql.DB, dlCfg DuckLakeConfig, sem chan struct{}, dataDir
 		return nil
 	}
 
-	// Create S3 secret if using object store
-	// - With explicit credentials (S3AccessKey set) or custom endpoint
-	// - With credential_chain or aws_sdk provider (for AWS S3)
+	// Create object store secret if using object store.
 	if dlCfg.ObjectStore != "" {
-		needsSecret := dlCfg.S3Endpoint != "" ||
-			dlCfg.S3AccessKey != "" ||
-			dlCfg.S3Provider == "credential_chain" ||
-			dlCfg.S3Provider == "aws_sdk" ||
-			dlCfg.S3Chain != "" ||
-			dlCfg.S3Profile != ""
+		if isAzureObjectStore(dlCfg.ObjectStore) {
+			// Azure Blob Storage: create an Azure secret if account name is configured.
+			if dlCfg.AzureAccountName != "" {
+				if err := createAzureSecret(db, dlCfg); err != nil {
+					return fmt.Errorf("failed to create Azure secret: %w", err)
+				}
+			}
+		} else {
+			// S3-compatible storage: create an S3 secret with explicit credentials
+			// or credential_chain/aws_sdk provider.
+			needsSecret := dlCfg.S3Endpoint != "" ||
+				dlCfg.S3AccessKey != "" ||
+				dlCfg.S3Provider == "credential_chain" ||
+				dlCfg.S3Provider == "aws_sdk" ||
+				dlCfg.S3Chain != "" ||
+				dlCfg.S3Profile != ""
 
-		if needsSecret {
-			if err := createS3Secret(db, dlCfg); err != nil {
-				return fmt.Errorf("failed to create S3 secret: %w", err)
+			if needsSecret {
+				if err := createS3Secret(db, dlCfg); err != nil {
+					return fmt.Errorf("failed to create S3 secret: %w", err)
+				}
 			}
 		}
 	}
@@ -1428,6 +1437,18 @@ func AttachDuckLake(db *sql.DB, dlCfg DuckLakeConfig, sem chan struct{}, dataDir
 			slog.Warn("Failed to set httpfs proxy config.", "stmt", "SET GLOBAL http_proxy", "error", err)
 		}
 		slog.Info("Routed httpfs traffic through forward HTTP proxy.", "proxy", dlCfg.HTTPProxy)
+	}
+
+	// Azure Blob Storage requires the curl transport backend. DuckDB's default
+	// (which may use a built-in HTTP client) doesn't work reliably with Azure's
+	// TLS configuration. Set this BEFORE the ATTACH so it's in effect for the
+	// initial catalog read.
+	if isAzureObjectStore(dlCfg.ObjectStore) {
+		if _, err := db.Exec("SET GLOBAL azure_transport_option_type = 'curl'"); err != nil {
+			slog.Warn("Failed to set azure_transport_option_type.", "error", err)
+		} else {
+			slog.Info("Set azure_transport_option_type to curl for Azure Blob Storage.")
+		}
 	}
 
 	// Warn if metadata store appears to connect via pgbouncer.
@@ -1962,6 +1983,63 @@ func setDuckLakeDefault(db *sql.DB) error {
 	return nil
 }
 
+// isAzureObjectStore returns true if the object store path uses Azure Blob
+// Storage (azure:// or az:// URL scheme).
+func isAzureObjectStore(objectStore string) bool {
+	return strings.HasPrefix(objectStore, "azure://") || strings.HasPrefix(objectStore, "az://")
+}
+
+// createAzureSecret creates a DuckDB secret for Azure Blob Storage access.
+// Uses the DuckDB azure extension's credential_chain provider, which delegates
+// to the Azure C++ SDK for token management. The SDK handles token refresh
+// automatically via managed identity, workload identity, CLI credentials, etc.
+//
+// Note: Caller must hold duckLakeSem to avoid race conditions.
+func createAzureSecret(db *sql.DB, dlCfg DuckLakeConfig) error {
+	// Check if secret already exists to avoid unnecessary creation
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM duckdb_secrets() WHERE name = 'ducklake_azure'").Scan(&count)
+	if err == nil && count > 0 {
+		return nil // Secret already exists
+	}
+
+	secretStmt := buildAzureSecret(dlCfg)
+
+	if _, err := db.Exec(secretStmt); err != nil {
+		return err
+	}
+
+	slog.Info("Created Azure secret successfully.", "account_name", dlCfg.AzureAccountName)
+	return nil
+}
+
+// buildAzureSecret builds a CREATE SECRET statement for Azure Blob Storage.
+// The credential_chain provider delegates authentication to the Azure C++ SDK,
+// which automatically handles token refresh for managed identity, workload
+// identity, CLI, and environment variable credentials.
+func buildAzureSecret(dlCfg DuckLakeConfig) string {
+	provider := dlCfg.AzureProvider
+	if provider == "" {
+		provider = "credential_chain"
+	}
+
+	secret := fmt.Sprintf(`
+		CREATE OR REPLACE SECRET ducklake_azure (
+			TYPE azure,
+			PROVIDER %s,
+			ACCOUNT_NAME '%s'`,
+		provider,
+		dlCfg.AzureAccountName,
+	)
+
+	if dlCfg.AzureChain != "" {
+		secret += fmt.Sprintf(",\n\t\t\tCHAIN '%s'", dlCfg.AzureChain)
+	}
+
+	secret += "\n\t\t)"
+	return secret
+}
+
 // createS3Secret creates a DuckDB secret for S3/MinIO access.
 // This is a standalone function so it can be reused by control plane workers.
 // Supports three providers:
@@ -2301,8 +2379,13 @@ func S3ProviderForConfig(dlCfg DuckLakeConfig) string {
 
 // needsCredentialRefresh returns true if the DuckLake config uses temporary credentials
 // that need periodic refresh (credential_chain or aws_sdk provider with an S3 object store).
+// Azure object stores do NOT need refresh here: DuckDB's azure extension delegates to the
+// Azure C++ SDK which handles token lifecycle (acquisition + refresh) internally.
 func needsCredentialRefresh(dlCfg DuckLakeConfig) bool {
 	if dlCfg.ObjectStore == "" {
+		return false
+	}
+	if isAzureObjectStore(dlCfg.ObjectStore) {
 		return false
 	}
 	p := S3ProviderForConfig(dlCfg)
