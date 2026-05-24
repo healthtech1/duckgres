@@ -149,6 +149,8 @@ type DuckLakeFileConfig struct {
 	AzureAccountName string `yaml:"azure_account_name"`
 	// Azure credential chain sources (semicolon-separated, e.g. "cli;managed_identity")
 	AzureChain string `yaml:"azure_chain"`
+	// Azure managed identity client ID (for user-assigned managed identity)
+	AzureClientID string `yaml:"azure_client_id"`
 
 	// Checkpoint interval for DuckLake maintenance (e.g., "24h", "6h")
 	CheckpointInterval string `yaml:"checkpoint_interval"`

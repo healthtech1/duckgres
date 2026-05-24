@@ -70,6 +70,21 @@ func TestBuildAzureSecret_WithChain(t *testing.T) {
 	}
 }
 
+func TestBuildAzureSecret_WithClientID(t *testing.T) {
+	secret := buildAzureSecret(DuckLakeConfig{
+		AzureAccountName: "myaccount",
+		AzureProvider:    "managed_identity",
+		AzureClientID:    "00000000-0000-0000-0000-000000000001",
+	})
+
+	if !strings.Contains(secret, "PROVIDER managed_identity") {
+		t.Errorf("expected PROVIDER managed_identity, got:\n%s", secret)
+	}
+	if !strings.Contains(secret, "CLIENT_ID '00000000-0000-0000-0000-000000000001'") {
+		t.Errorf("expected CLIENT_ID, got:\n%s", secret)
+	}
+}
+
 func TestBuildAzureSecret_SecretName(t *testing.T) {
 	secret := buildAzureSecret(DuckLakeConfig{
 		AzureAccountName: "myaccount",

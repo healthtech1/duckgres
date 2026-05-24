@@ -2036,6 +2036,10 @@ func buildAzureSecret(dlCfg DuckLakeConfig) string {
 		secret += fmt.Sprintf(",\n\t\t\tCHAIN '%s'", dlCfg.AzureChain)
 	}
 
+	if dlCfg.AzureClientID != "" {
+		secret += fmt.Sprintf(",\n\t\t\tCLIENT_ID '%s'", dlCfg.AzureClientID)
+	}
+
 	secret += "\n\t\t)"
 	return secret
 }
