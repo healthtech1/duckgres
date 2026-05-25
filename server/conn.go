@@ -4756,6 +4756,14 @@ func (c *clientConn) sendDataRowWithFormats(values []interface{}, formatCodes []
 			// Binary encoding — normalize driver-specific types first
 			v = normalizeDriverValue(v)
 			encoded := encodeBinary(v, typeOIDs[i])
+			if typeOIDs[i] == OidDate {
+				slog.Info("DEBUG date binary encoding",
+					"column", i, "oid", typeOIDs[i],
+					"input_type", fmt.Sprintf("%T", v),
+					"input_value", fmt.Sprintf("%v", v),
+					"encoded_bytes", fmt.Sprintf("%x", encoded),
+					"encoded_len", len(encoded))
+			}
 			if encoded == nil {
 				// Binary encoding failed. Sending text here would corrupt
 				// the row because the client expects binary-format bytes.
