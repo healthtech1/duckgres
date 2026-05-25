@@ -4506,6 +4506,62 @@ func TestTranspile_FormatStringConversion(t *testing.T) {
 	}
 }
 
+func TestTranspile_PgFormat(t *testing.T) {
+	tr := New(DefaultConfig())
+
+	tests := []struct {
+		name     string
+		input    string
+		contains []string
+		excludes []string
+	}{
+		{
+			name:     "format %s single arg",
+			input:    "SELECT format('%s', col) FROM t",
+			contains: []string{"format('{}', col)"},
+			excludes: []string{"%s"},
+		},
+		{
+			name:     "format %s %s two args",
+			input:    `SELECT format('"%s"."%s"', schema, name) FROM t`,
+			contains: []string{`format('"{}"."{}"', schema, name)`},
+			excludes: []string{"%s"},
+		},
+		{
+			name:     "format %I identifier",
+			input:    "SELECT format('%I.%I', schema, name) FROM t",
+			contains: []string{"format('{}.{}', schema, name)"},
+			excludes: []string{"%I"},
+		},
+		{
+			name:     "format with pg_catalog prefix",
+			input:    "SELECT pg_catalog.format('%s', col) FROM t",
+			contains: []string{"format('{}', col)"},
+			excludes: []string{"pg_catalog"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := tr.Transpile(tt.input)
+			if err != nil {
+				t.Fatalf("Transpile(%q) error: %v", tt.input, err)
+			}
+			lowerSQL := strings.ToLower(result.SQL)
+			for _, c := range tt.contains {
+				if !strings.Contains(lowerSQL, strings.ToLower(c)) {
+					t.Errorf("Transpile(%q) = %q, should contain %q", tt.input, result.SQL, c)
+				}
+			}
+			for _, e := range tt.excludes {
+				if strings.Contains(lowerSQL, strings.ToLower(e)) {
+					t.Errorf("Transpile(%q) = %q, should NOT contain %q", tt.input, result.SQL, e)
+				}
+			}
+		})
+	}
+}
+
 func TestTranspile_MacroFunctions(t *testing.T) {
 	// These functions are now DuckDB macros — the transpiler should leave them
 	// as-is (just strip pg_catalog prefix). Correct behavior is verified at runtime.
