@@ -490,10 +490,7 @@ func initPgCatalog(db *sql.DB, serverStartTime, processStartTime time.Time, serv
 			COALESCE(typelem, 0::UINTEGER)::UINTEGER AS typelem,
 			-- typarray: 0 if no array type exists
 			COALESCE(typarray, 0::UINTEGER)::UINTEGER AS typarray,
-			-- typinput: JDBC uses typinput='pg_catalog.array_in'::regproc to detect
-			-- array types. DuckDB doesn't populate this column and doesn't support
-			-- ::regproc casts, so we synthesise the value from typcategory.
-			CASE WHEN typcategory = 'A' THEN 'pg_catalog.array_in' ELSE 'pg_catalog.textin' END AS typinput,
+			typinput,
 			typoutput,
 			typreceive,
 			typsend,
@@ -535,7 +532,7 @@ func initPgCatalog(db *sql.DB, serverStartTime, processStartTime time.Time, serv
 			NULL AS typsubscript,
 			v.typelem::UINTEGER AS typelem,
 			0::UINTEGER AS typarray,
-			CASE WHEN v.typcategory = 'A' THEN 'pg_catalog.array_in' ELSE 'pg_catalog.textin' END AS typinput,
+			NULL AS typinput,
 			NULL AS typoutput,
 			NULL AS typreceive,
 			NULL AS typsend,
@@ -1117,8 +1114,6 @@ func initUtilityMacros(db *sql.DB, serverStartTime, processStartTime time.Time, 
 // Views are created in memory.main (before USE ducklake) and query from unqualified information_schema,
 // which resolves to the default catalog's information_schema at query time.
 func initInformationSchema(db *sql.DB, duckLakeMode bool) error {
-	slog.Info("initInformationSchema called.", "duckLakeMode", duckLakeMode, "version", "udt_name_v2")
-
 	// Use unqualified "information_schema" — it resolves to the current default
 	// catalog's information_schema at query time.
 	infoSchemaPrefix := "information_schema"
@@ -1254,11 +1249,8 @@ func initInformationSchema(db *sql.DB, duckLakeMode bool) error {
 			AND c.column_name = m.column_name
 	`
 	// DROP then CREATE instead of CREATE OR REPLACE — DuckDB silently no-ops
-	// CREATE OR REPLACE when the view exists in a cross-catalog context.
-	db.Exec("DROP VIEW IF EXISTS memory.main.information_schema_columns_compat")
-	primarySQL := fmt.Sprintf(columnsViewSQL, infoSchemaPrefix)
-	if _, err := db.Exec(primarySQL); err != nil {
-		slog.Warn("Primary columns_compat view failed, trying fallback.", "error", err)
+	if _, err := db.Exec(fmt.Sprintf(columnsViewSQL, infoSchemaPrefix)); err != nil {
+		slog.Warn("Failed to create information_schema_columns_compat view with metadata join, trying fallback.", "error", err)
 		// If join with metadata table fails, create simpler view without it
 		columnsViewSimpleSQL := `
 			CREATE OR REPLACE VIEW memory.main.information_schema_columns_compat AS
@@ -1363,12 +1355,8 @@ func initInformationSchema(db *sql.DB, duckLakeMode bool) error {
 			FROM %s.columns
 		`
 		if _, err := db.Exec(fmt.Sprintf(columnsViewSimpleSQL, infoSchemaPrefix)); err != nil {
-			slog.Warn("Fallback columns_compat view also failed.", "error", err)
-		} else {
-			slog.Info("Created columns_compat view via fallback path.")
+			slog.Warn("Failed to create information_schema_columns_compat view.", "error", err)
 		}
-	} else {
-		slog.Info("Created columns_compat view via primary path.")
 	}
 
 	// Create information_schema.tables wrapper view with additional PostgreSQL columns

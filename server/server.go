@@ -1093,30 +1093,18 @@ func ConfigureDBConnection(db *sql.DB, cfg Config, duckLakeSem chan struct{}, us
 		slog.Warn("Failed to attach Iceberg catalog.", "user", username, "error", err)
 	}
 
-	// Initialize information_schema compatibility views.
-	// In non-DuckLake mode, create before setting default (views go to memory.main).
-	// In DuckLake mode, create AFTER setting default so information_schema resolves
-	// to the DuckLake catalog — otherwise DuckDB binds the view to memory's
-	// information_schema at creation time and silently fails to replace it when the
-	// new SQL references columns that don't exist in the memory catalog.
-	// The views use explicit memory.main. prefix so they're created in memory even
-	// when DuckLake is the default catalog.
-	if !duckLakeMode {
-		if err := initInformationSchema(db, false); err != nil {
-			slog.Warn("Failed to initialize information_schema.", "user", username, "error", err)
-		}
+	// Initialize information_schema compatibility views in memory.main.
+	// Note: in practice, sessionmeta.go recreates these views on every
+	// connection with session-specific overrides, so this initial creation
+	// is mainly for non-DuckLake mode or edge cases.
+	if err := initInformationSchema(db, duckLakeMode); err != nil {
+		slog.Warn("Failed to initialize information_schema.", "user", username, "error", err)
 	}
 
 	// Now set DuckLake as the default catalog so all user queries use it
 	if duckLakeMode {
 		if err := setDuckLakeDefault(db); err != nil {
 			return fmt.Errorf("failed to set DuckLake as default: %w", err)
-		}
-		// Now create information_schema views — information_schema resolves to
-		// DuckLake's catalog, and the explicit memory.main. prefix ensures the
-		// views are created in memory, not in the DuckLake catalog.
-		if err := initInformationSchema(db, true); err != nil {
-			slog.Warn("Failed to initialize information_schema.", "user", username, "error", err)
 		}
 	}
 
