@@ -151,6 +151,7 @@ var specialFunctions = map[string]bool{
 	"array_agg":      true, // becomes list()
 	"string_to_array": true, // argument order
 	"log":             true, // 1-arg -> log10, 2-arg -> ln(value)/ln(base)
+	"format":          true, // PG format('%s', x) uses %s; DuckDB format uses {}
 }
 
 func (t *FunctionTransform) Transform(tree *pg_query.ParseResult, result *Result) (bool, error) {
@@ -282,9 +283,38 @@ func (t *FunctionTransform) handleSpecialFunction(fc *pg_query.FuncCall, funcNam
 	case "to_timestamp":
 		return t.handleToTimestamp(fc, funcNameIdx)
 
+	case "format":
+		return t.handleFormat(fc, funcNameIdx)
+
 	default:
 		return false
 	}
+}
+
+// handleFormat converts PostgreSQL format() to DuckDB format().
+// PG uses %s, %I, %L placeholders; DuckDB uses {} for positional args.
+func (t *FunctionTransform) handleFormat(fc *pg_query.FuncCall, funcNameIdx int) bool {
+	if len(fc.Args) == 0 {
+		return false
+	}
+	// Get the format string (first argument)
+	if str := extractStringConstant(fc.Args[0]); str != "" {
+		// Replace PG format specifiers with DuckDB positional placeholders
+		converted := strings.ReplaceAll(str, "%s", "{}")
+		converted = strings.ReplaceAll(converted, "%I", "{}")
+		converted = strings.ReplaceAll(converted, "%L", "{}")
+		setStringConstant(fc.Args[0], converted)
+	}
+	// Strip pg_catalog prefix if present
+	if len(fc.Funcname) > 1 {
+		if first := fc.Funcname[0].GetString_(); first != nil {
+			schema := strings.ToLower(first.Sval)
+			if schema == "pg_catalog" || schema == "public" {
+				fc.Funcname = fc.Funcname[1:]
+			}
+		}
+	}
+	return true
 }
 
 // isLogTwoArg checks if a FuncCall is log() with exactly 2 arguments.

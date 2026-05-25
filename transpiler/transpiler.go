@@ -394,7 +394,7 @@ func Classify(sql string, cfg Config) Classification {
 		"REGEXP_MATCHES(", "REGEXP_MATCH(",
 		// Type/conversion functions
 		"PG_TYPEOF(", "TO_CHAR(", "TO_DATE(", "TO_NUMBER(",
-		"TO_TIMESTAMP(",
+		"TO_TIMESTAMP(", "FORMAT(",
 		// JSON functions
 		"JSON_OBJECT_KEYS(", "JSONB_OBJECT_KEYS(",
 		// Date/time functions
