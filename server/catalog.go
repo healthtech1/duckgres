@@ -1117,6 +1117,8 @@ func initUtilityMacros(db *sql.DB, serverStartTime, processStartTime time.Time, 
 // Views are created in memory.main (before USE ducklake) and query from unqualified information_schema,
 // which resolves to the default catalog's information_schema at query time.
 func initInformationSchema(db *sql.DB, duckLakeMode bool) error {
+	slog.Info("initInformationSchema called.", "duckLakeMode", duckLakeMode, "version", "udt_name_v2")
+
 	// Use unqualified "information_schema" — it resolves to the current default
 	// catalog's information_schema at query time.
 	infoSchemaPrefix := "information_schema"
@@ -1251,7 +1253,9 @@ func initInformationSchema(db *sql.DB, duckLakeMode bool) error {
 			AND c.table_name = m.table_name
 			AND c.column_name = m.column_name
 	`
-	if _, err := db.Exec(fmt.Sprintf(columnsViewSQL, infoSchemaPrefix)); err != nil {
+	primarySQL := fmt.Sprintf(columnsViewSQL, infoSchemaPrefix)
+	if _, err := db.Exec(primarySQL); err != nil {
+		slog.Warn("Primary columns_compat view failed, trying fallback.", "error", err)
 		// If join with metadata table fails, create simpler view without it
 		columnsViewSimpleSQL := `
 			CREATE OR REPLACE VIEW memory.main.information_schema_columns_compat AS
@@ -1356,8 +1360,12 @@ func initInformationSchema(db *sql.DB, duckLakeMode bool) error {
 			FROM %s.columns
 		`
 		if _, err := db.Exec(fmt.Sprintf(columnsViewSimpleSQL, infoSchemaPrefix)); err != nil {
-			slog.Warn("Failed to create information_schema_columns_compat view.", "error", err)
+			slog.Warn("Fallback columns_compat view also failed.", "error", err)
+		} else {
+			slog.Info("Created columns_compat view via fallback path.")
 		}
+	} else {
+		slog.Info("Created columns_compat view via primary path.")
 	}
 
 	// Create information_schema.tables wrapper view with additional PostgreSQL columns
