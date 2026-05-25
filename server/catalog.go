@@ -1253,6 +1253,9 @@ func initInformationSchema(db *sql.DB, duckLakeMode bool) error {
 			AND c.table_name = m.table_name
 			AND c.column_name = m.column_name
 	`
+	// DROP then CREATE instead of CREATE OR REPLACE — DuckDB silently no-ops
+	// CREATE OR REPLACE when the view exists in a cross-catalog context.
+	db.Exec("DROP VIEW IF EXISTS memory.main.information_schema_columns_compat")
 	primarySQL := fmt.Sprintf(columnsViewSQL, infoSchemaPrefix)
 	if _, err := db.Exec(primarySQL); err != nil {
 		slog.Warn("Primary columns_compat view failed, trying fallback.", "error", err)
