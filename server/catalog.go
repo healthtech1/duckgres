@@ -1205,8 +1205,31 @@ func initInformationSchema(db *sql.DB, duckLakeMode bool) error {
 			NULL AS domain_schema,
 			NULL AS domain_name,
 			NULL AS udt_catalog,
-			NULL AS udt_schema,
-			NULL AS udt_name,
+			'pg_catalog' AS udt_schema,
+			-- udt_name: PostgreSQL short type name used by Metabase to determine
+			-- database-type. Must match pg_type.typname values.
+			CASE
+				WHEN UPPER(c.data_type) = 'VARCHAR' OR UPPER(c.data_type) LIKE 'VARCHAR(%%' THEN 'varchar'
+				WHEN UPPER(c.data_type) = 'TEXT' THEN 'text'
+				WHEN UPPER(c.data_type) = 'BOOLEAN' THEN 'bool'
+				WHEN UPPER(c.data_type) = 'TINYINT' OR UPPER(c.data_type) = 'SMALLINT' THEN 'int2'
+				WHEN UPPER(c.data_type) = 'INTEGER' THEN 'int4'
+				WHEN UPPER(c.data_type) = 'BIGINT' THEN 'int8'
+				WHEN UPPER(c.data_type) = 'HUGEINT' THEN 'numeric'
+				WHEN UPPER(c.data_type) = 'REAL' OR UPPER(c.data_type) = 'FLOAT4' THEN 'float4'
+				WHEN UPPER(c.data_type) = 'DOUBLE' OR UPPER(c.data_type) = 'FLOAT8' THEN 'float8'
+				WHEN UPPER(c.data_type) LIKE 'DECIMAL%%' OR UPPER(c.data_type) LIKE 'NUMERIC%%' THEN 'numeric'
+				WHEN UPPER(c.data_type) = 'DATE' THEN 'date'
+				WHEN UPPER(c.data_type) = 'TIME' THEN 'time'
+				WHEN UPPER(c.data_type) = 'TIMESTAMP' THEN 'timestamp'
+				WHEN UPPER(c.data_type) = 'TIMESTAMPTZ' OR UPPER(c.data_type) = 'TIMESTAMP WITH TIME ZONE' THEN 'timestamptz'
+				WHEN UPPER(c.data_type) = 'INTERVAL' THEN 'interval'
+				WHEN UPPER(c.data_type) = 'UUID' THEN 'uuid'
+				WHEN UPPER(c.data_type) = 'BLOB' OR UPPER(c.data_type) = 'BYTEA' THEN 'bytea'
+				WHEN UPPER(c.data_type) = 'JSON' THEN 'json'
+				WHEN UPPER(c.data_type) LIKE '%%[]' THEN '_' || LOWER(REPLACE(c.data_type, '[]', ''))
+				ELSE LOWER(c.data_type)
+			END AS udt_name,
 			NULL AS scope_catalog,
 			NULL AS scope_schema,
 			NULL AS scope_name,
@@ -1292,8 +1315,29 @@ func initInformationSchema(db *sql.DB, duckLakeMode bool) error {
 				NULL AS domain_schema,
 				NULL AS domain_name,
 				NULL AS udt_catalog,
-				NULL AS udt_schema,
-				NULL AS udt_name,
+				'pg_catalog' AS udt_schema,
+				CASE
+					WHEN UPPER(data_type) = 'VARCHAR' OR UPPER(data_type) LIKE 'VARCHAR(%%' THEN 'varchar'
+					WHEN UPPER(data_type) = 'TEXT' THEN 'text'
+					WHEN UPPER(data_type) = 'BOOLEAN' THEN 'bool'
+					WHEN UPPER(data_type) = 'TINYINT' OR UPPER(data_type) = 'SMALLINT' THEN 'int2'
+					WHEN UPPER(data_type) = 'INTEGER' THEN 'int4'
+					WHEN UPPER(data_type) = 'BIGINT' THEN 'int8'
+					WHEN UPPER(data_type) = 'HUGEINT' THEN 'numeric'
+					WHEN UPPER(data_type) = 'REAL' OR UPPER(data_type) = 'FLOAT4' THEN 'float4'
+					WHEN UPPER(data_type) = 'DOUBLE' OR UPPER(data_type) = 'FLOAT8' THEN 'float8'
+					WHEN UPPER(data_type) LIKE 'DECIMAL%%' OR UPPER(data_type) LIKE 'NUMERIC%%' THEN 'numeric'
+					WHEN UPPER(data_type) = 'DATE' THEN 'date'
+					WHEN UPPER(data_type) = 'TIME' THEN 'time'
+					WHEN UPPER(data_type) = 'TIMESTAMP' THEN 'timestamp'
+					WHEN UPPER(data_type) = 'TIMESTAMPTZ' OR UPPER(data_type) = 'TIMESTAMP WITH TIME ZONE' THEN 'timestamptz'
+					WHEN UPPER(data_type) = 'INTERVAL' THEN 'interval'
+					WHEN UPPER(data_type) = 'UUID' THEN 'uuid'
+					WHEN UPPER(data_type) = 'BLOB' OR UPPER(data_type) = 'BYTEA' THEN 'bytea'
+					WHEN UPPER(data_type) = 'JSON' THEN 'json'
+					WHEN UPPER(data_type) LIKE '%%[]' THEN '_' || LOWER(REPLACE(data_type, '[]', ''))
+					ELSE LOWER(data_type)
+				END AS udt_name,
 				NULL AS scope_catalog,
 				NULL AS scope_schema,
 				NULL AS scope_name,
