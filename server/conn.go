@@ -5004,39 +5004,54 @@ func (c *clientConn) sendNotice(severity, code, message string) {
 
 // Extended query protocol handlers
 
-// castUntypedParams rewrites $N placeholders to $N::TEXT when the
-// corresponding parameter type OID is 0 (unspecified). DuckDB cannot infer
-// types for untyped prepared statement parameters and returns:
+// pgOIDToCast maps PostgreSQL type OIDs to DuckDB-compatible CAST type names.
+// DuckDB's prepared statement engine cannot infer parameter types from context,
+// so we must explicitly cast every $N placeholder.
+var pgOIDToCast = map[int32]string{
+	16:   "BOOLEAN",     // bool
+	20:   "BIGINT",      // int8
+	21:   "SMALLINT",    // int2
+	23:   "INTEGER",     // int4
+	25:   "TEXT",         // text
+	26:   "INTEGER",     // oid (DuckDB has no oid type, use INTEGER)
+	700:  "REAL",         // float4
+	701:  "DOUBLE",       // float8
+	1042: "TEXT",         // bpchar
+	1043: "VARCHAR",     // varchar
+	1082: "DATE",         // date
+	1083: "TIME",         // time
+	1114: "TIMESTAMP",   // timestamp
+	1184: "TIMESTAMPTZ", // timestamptz
+	1186: "INTERVAL",    // interval
+	1700: "NUMERIC",     // numeric
+	2950: "UUID",         // uuid
+}
+
+// castParams rewrites $N placeholders to $N::TYPE based on the parameter type
+// OIDs from the Parse message. DuckDB cannot handle prepared statement
+// parameters without explicit casts — it returns:
 //   "Prepared statement argument types are not supported, use CAST"
-// JDBC drivers commonly send OID 0 for string parameters in catalog queries
-// (e.g. DatabaseMetaData.getColumns). Casting to TEXT is safe because the
-// JDBC driver sends these values as text-format strings.
-func castUntypedParams(query string, paramTypes []int32) string {
+// This applies to both untyped (OID 0) and typed parameters. Untyped
+// parameters are cast to TEXT (safe because JDBC sends them as strings).
+func castParams(query string, paramTypes []int32) string {
 	if len(paramTypes) == 0 {
 		return query
 	}
-	hasUntyped := false
-	for _, oid := range paramTypes {
-		if oid == 0 {
-			hasUntyped = true
-			break
-		}
-	}
-	if !hasUntyped {
-		return query
-	}
-	// Replace $N with $N::TEXT for each untyped parameter. Process highest
-	// index first and use a regex to avoid $1 matching inside $10.
+	// Replace $N with $N::TYPE. Process highest index first to avoid
+	// $1 matching inside $10.
 	for i := len(paramTypes) - 1; i >= 0; i-- {
+		castType := "TEXT" // default for untyped (OID 0) or unknown OIDs
 		if paramTypes[i] != 0 {
-			continue
+			if t, ok := pgOIDToCast[paramTypes[i]]; ok {
+				castType = t
+			}
 		}
 		n := i + 1
 		re := regexp.MustCompile(fmt.Sprintf(`\$%d(?:\D|$)`, n))
 		query = re.ReplaceAllStringFunc(query, func(match string) string {
 			placeholder := fmt.Sprintf("$%d", n)
 			suffix := match[len(placeholder):]
-			return placeholder + "::TEXT" + suffix
+			return placeholder + "::" + castType + suffix
 		})
 	}
 	return query
@@ -5174,7 +5189,7 @@ func (c *clientConn) handleParse(body []byte) {
 		delete(c.stmts, stmtName)
 		c.stmts[stmtName] = &preparedStmt{
 			query:          query,
-			convertedQuery: castUntypedParams(query, paramTypes), // Cast untyped params for DuckDB
+			convertedQuery: castParams(query, paramTypes), // Cast untyped params for DuckDB
 			paramTypes:     paramTypes,
 			numParams:      paramCount,
 		}
@@ -5215,7 +5230,7 @@ func (c *clientConn) handleParse(body []byte) {
 	// send OID 0 for string parameters in catalog queries. Cast these to
 	// TEXT so DuckDB can plan the query.
 	finalSQL := c.rewriteDirectQuery(result.SQL)
-	finalSQL = castUntypedParams(finalSQL, paramTypes)
+	finalSQL = castParams(finalSQL, paramTypes)
 
 	c.stmts[stmtName] = &preparedStmt{
 		query:             query,    // Keep original for logging and Describe
