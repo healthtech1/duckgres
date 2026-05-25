@@ -490,7 +490,10 @@ func initPgCatalog(db *sql.DB, serverStartTime, processStartTime time.Time, serv
 			COALESCE(typelem, 0::UINTEGER)::UINTEGER AS typelem,
 			-- typarray: 0 if no array type exists
 			COALESCE(typarray, 0::UINTEGER)::UINTEGER AS typarray,
-			typinput,
+			-- typinput: JDBC uses typinput='pg_catalog.array_in'::regproc to detect
+			-- array types. DuckDB doesn't populate this column and doesn't support
+			-- ::regproc casts, so we synthesise the value from typcategory.
+			CASE WHEN typcategory = 'A' THEN 'pg_catalog.array_in' ELSE 'pg_catalog.textin' END AS typinput,
 			typoutput,
 			typreceive,
 			typsend,
@@ -532,7 +535,7 @@ func initPgCatalog(db *sql.DB, serverStartTime, processStartTime time.Time, serv
 			NULL AS typsubscript,
 			v.typelem::UINTEGER AS typelem,
 			0::UINTEGER AS typarray,
-			NULL AS typinput,
+			CASE WHEN v.typcategory = 'A' THEN 'pg_catalog.array_in' ELSE 'pg_catalog.textin' END AS typinput,
 			NULL AS typoutput,
 			NULL AS typreceive,
 			NULL AS typsend,
