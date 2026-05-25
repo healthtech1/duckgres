@@ -269,7 +269,7 @@ func encodeBinary(v interface{}, oid int32) []byte {
 		return encodeBool(v)
 	case OidInt2:
 		return encodeInt2(v)
-	case OidInt4:
+	case OidInt4, OidOid:
 		return encodeInt4(v)
 	case OidInt8:
 		return encodeInt8(v)

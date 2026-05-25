@@ -4753,13 +4753,17 @@ func (c *clientConn) sendDataRowWithFormats(values []interface{}, formatCodes []
 		}
 
 		if useBinary && typeOIDs != nil && i < len(typeOIDs) {
-			// Binary encoding
+			// Binary encoding — normalize driver-specific types first
+			v = normalizeDriverValue(v)
 			encoded := encodeBinary(v, typeOIDs[i])
 			if encoded == nil {
-				// Fallback to text if binary encoding fails
-				str := formatValue(v)
-				_ = binary.Write(&buf, binary.BigEndian, int32(len(str)))
-				buf.WriteString(str)
+				// Binary encoding failed. Sending text here would corrupt
+				// the row because the client expects binary-format bytes.
+				// Send NULL (-1) instead — losing one value is better than
+				// corrupting every subsequent column in the row.
+				slog.Warn("Binary encoding failed, sending NULL.",
+					"column", i, "oid", typeOIDs[i], "type", fmt.Sprintf("%T", v))
+				_ = binary.Write(&buf, binary.BigEndian, int32(-1))
 			} else {
 				_ = binary.Write(&buf, binary.BigEndian, int32(len(encoded)))
 				buf.Write(encoded)
