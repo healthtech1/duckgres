@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 	"strings"
@@ -467,27 +466,18 @@ func encodeDate(v interface{}) []byte {
 
 	switch val := v.(type) {
 	case time.Time:
-		// Days since PostgreSQL epoch (2000-01-01). Use date components
-		// directly instead of Unix()/86400 which truncates toward zero for
-		// negative values (off-by-one for pre-1970 dates) and is affected by
-		// any non-UTC location on val.
-		y, m, d := val.Date()
-		t := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
-		pgEpoch := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-		days = int32(t.Sub(pgEpoch).Hours() / 24)
-		slog.Debug("encodeDate: time.Time", "input", val, "days", days)
+		// Days since PostgreSQL epoch (2000-01-01)
+		unixDays := val.Unix() / 86400
+		days = int32(unixDays - pgEpochDays)
 	case string:
 		// Try to parse date string
 		t, err := time.Parse("2006-01-02", val)
 		if err != nil {
-			slog.Warn("encodeDate: failed to parse string", "input", val, "error", err)
 			return nil
 		}
-		pgEpoch := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-		days = int32(t.Sub(pgEpoch).Hours() / 24)
-		slog.Debug("encodeDate: string", "input", val, "days", days)
+		unixDays := t.Unix() / 86400
+		days = int32(unixDays - pgEpochDays)
 	default:
-		slog.Warn("encodeDate: unsupported type", "type", fmt.Sprintf("%T", v), "value", fmt.Sprintf("%v", v))
 		return nil
 	}
 

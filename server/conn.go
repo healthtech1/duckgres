@@ -4756,14 +4756,6 @@ func (c *clientConn) sendDataRowWithFormats(values []interface{}, formatCodes []
 			// Binary encoding — normalize driver-specific types first
 			v = normalizeDriverValue(v)
 			encoded := encodeBinary(v, typeOIDs[i])
-			if typeOIDs[i] == OidDate {
-				slog.Info("DEBUG date binary encoding",
-					"column", i, "oid", typeOIDs[i],
-					"input_type", fmt.Sprintf("%T", v),
-					"input_value", fmt.Sprintf("%v", v),
-					"encoded_bytes", fmt.Sprintf("%x", encoded),
-					"encoded_len", len(encoded))
-			}
 			if encoded == nil {
 				// Binary encoding failed. Sending text here would corrupt
 				// the row because the client expects binary-format bytes.
@@ -4777,10 +4769,24 @@ func (c *clientConn) sendDataRowWithFormats(values []interface{}, formatCodes []
 				buf.Write(encoded)
 			}
 		} else {
-			// Text encoding — use JSON re-serialization for JSON columns
+			// Text encoding — use JSON re-serialization for JSON columns,
+			// and format DATE columns as date-only (YYYY-MM-DD) rather than
+			// the default timestamp format. Otherwise JDBC's text-format
+			// DATE parser fails with values like "2026-01-01 00:00:00".
 			var str string
-			if typeOIDs != nil && i < len(typeOIDs) && (typeOIDs[i] == OidJSON || typeOIDs[i] == OidJSONB) {
-				str = string(encodeJSON(v))
+			if typeOIDs != nil && i < len(typeOIDs) {
+				switch typeOIDs[i] {
+				case OidJSON, OidJSONB:
+					str = string(encodeJSON(v))
+				case OidDate:
+					if t, ok := v.(time.Time); ok && !t.IsZero() {
+						str = t.Format("2006-01-02")
+					} else {
+						str = formatValue(v)
+					}
+				default:
+					str = formatValue(v)
+				}
 			} else {
 				str = formatValue(v)
 			}
