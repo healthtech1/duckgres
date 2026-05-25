@@ -1117,15 +1117,14 @@ func initUtilityMacros(db *sql.DB, serverStartTime, processStartTime time.Time, 
 // Views are created in memory.main (before USE ducklake) and query from unqualified information_schema,
 // which resolves to the default catalog's information_schema at query time.
 func initInformationSchema(db *sql.DB, duckLakeMode bool) error {
-	// Use just "information_schema" without catalog prefix
-	// Views are created in memory.main (before USE ducklake) and query from information_schema
-	// which resolves to the current default catalog's information_schema at query time
+	// Use unqualified "information_schema" — it resolves to the current default
+	// catalog's information_schema at query time.
 	infoSchemaPrefix := "information_schema"
 
 	// Create metadata table to store column type information that DuckDB doesn't preserve
 	// Table is created in main schema (which is memory.main before USE ducklake)
 	metadataTableSQL := `
-		CREATE TABLE IF NOT EXISTS main.__duckgres_column_metadata (
+		CREATE TABLE IF NOT EXISTS memory.main.__duckgres_column_metadata (
 			table_schema VARCHAR NOT NULL,
 			table_name VARCHAR NOT NULL,
 			column_name VARCHAR NOT NULL,
@@ -1145,7 +1144,7 @@ func initInformationSchema(db *sql.DB, duckLakeMode bool) error {
 	//       TIMESTAMP->timestamp without time zone, DECIMAL->numeric, etc.
 	// Views are created in main schema (which is memory.main before USE ducklake)
 	columnsViewSQL := `
-		CREATE OR REPLACE VIEW main.information_schema_columns_compat AS
+		CREATE OR REPLACE VIEW memory.main.information_schema_columns_compat AS
 		SELECT
 			CASE WHEN c.table_catalog IN ('ducklake', 'memory') THEN current_database() ELSE c.table_catalog END AS table_catalog,
 			CASE WHEN c.table_schema = 'main' THEN 'public' ELSE c.table_schema END AS table_schema,
@@ -1247,7 +1246,7 @@ func initInformationSchema(db *sql.DB, duckLakeMode bool) error {
 			NULL AS generation_expression,
 			'YES' AS is_updatable
 		FROM %s.columns c
-		LEFT JOIN main.__duckgres_column_metadata m
+		LEFT JOIN memory.main.__duckgres_column_metadata m
 			ON c.table_schema = m.table_schema
 			AND c.table_name = m.table_name
 			AND c.column_name = m.column_name
@@ -1255,7 +1254,7 @@ func initInformationSchema(db *sql.DB, duckLakeMode bool) error {
 	if _, err := db.Exec(fmt.Sprintf(columnsViewSQL, infoSchemaPrefix)); err != nil {
 		// If join with metadata table fails, create simpler view without it
 		columnsViewSimpleSQL := `
-			CREATE OR REPLACE VIEW main.information_schema_columns_compat AS
+			CREATE OR REPLACE VIEW memory.main.information_schema_columns_compat AS
 			SELECT
 				CASE WHEN table_catalog IN ('ducklake', 'memory') THEN current_database() ELSE table_catalog END AS table_catalog,
 				CASE WHEN table_schema = 'main' THEN 'public' ELSE table_schema END AS table_schema,
@@ -1365,7 +1364,7 @@ func initInformationSchema(db *sql.DB, duckLakeMode bool) error {
 	// Filter out internal duckgres tables/views and DuckDB system views
 	// Normalize 'main' schema to 'public' for PostgreSQL compatibility
 	tablesViewSQL := `
-		CREATE OR REPLACE VIEW main.information_schema_tables_compat AS
+		CREATE OR REPLACE VIEW memory.main.information_schema_tables_compat AS
 		SELECT
 			CASE WHEN t.table_catalog IN ('ducklake', 'memory') THEN current_database() ELSE t.table_catalog END AS table_catalog,
 			CASE WHEN t.table_schema = 'main' THEN 'public' ELSE t.table_schema END AS table_schema,
@@ -1405,7 +1404,7 @@ func initInformationSchema(db *sql.DB, duckLakeMode bool) error {
 	// Normalize 'main' to 'public' and add synthetic entries for pg_catalog and information_schema
 	// to match PostgreSQL's information_schema.schemata
 	schemataViewSQL := `
-		CREATE OR REPLACE VIEW main.information_schema_schemata_compat AS
+		CREATE OR REPLACE VIEW memory.main.information_schema_schemata_compat AS
 		SELECT
 			CASE WHEN s.catalog_name IN ('ducklake', 'memory') THEN current_database() ELSE s.catalog_name END AS catalog_name,
 			CASE WHEN s.schema_name = 'main' THEN 'public' ELSE s.schema_name END AS schema_name,
@@ -1438,7 +1437,7 @@ func initInformationSchema(db *sql.DB, duckLakeMode bool) error {
 	// Filter out internal duckgres views and DuckDB system views
 	// Normalize 'main' schema to 'public' for PostgreSQL compatibility
 	viewsViewSQL := `
-		CREATE OR REPLACE VIEW main.information_schema_views_compat AS
+		CREATE OR REPLACE VIEW memory.main.information_schema_views_compat AS
 		SELECT
 			CASE WHEN v.table_catalog IN ('ducklake', 'memory') THEN current_database() ELSE v.table_catalog END AS table_catalog,
 			CASE WHEN v.table_schema = 'main' THEN 'public' ELSE v.table_schema END AS table_schema,
