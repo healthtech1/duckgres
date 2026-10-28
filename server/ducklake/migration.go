@@ -635,21 +635,7 @@ func BuildAttachStmt(dlCfg Config, migrate bool) string {
 			dlCfg.ApplicationName,
 		),
 	)
-	dataPath := dlCfg.ObjectStore
-	if dataPath == "" {
-		dataPath = dlCfg.DataPath
-	}
-
-	var options []string
-	if dataPath != "" {
-		options = append(options, fmt.Sprintf("DATA_PATH '%s'", escapeSQLStringLiteral(dataPath)))
-	}
-	if migrate {
-		options = append(options, "AUTOMATIC_MIGRATION TRUE")
-	}
-	if dlCfg.DataInliningRowLimit != nil {
-		options = append(options, fmt.Sprintf("DATA_INLINING_ROW_LIMIT %d", *dlCfg.DataInliningRowLimit))
-	}
+	options := attachOptions(dlCfg, migrate)
 
 	if len(options) > 0 {
 		return fmt.Sprintf("ATTACH 'ducklake:%s' AS ducklake (%s)",

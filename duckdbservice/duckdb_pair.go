@@ -142,6 +142,8 @@ func OpenDuckDBPair(cfg server.Config, username string) (*DuckDBPair, error) {
 // attached catalogs) thanks to the shared connector, so no per-conn init is
 // needed for credential rotation.
 func CreateWorkerDBPair(cfg server.Config, duckLakeSem chan struct{}, username string, serverStartTime time.Time, serverVersion string) (*DuckDBPair, error) {
+	// The control plane resizes live workers with SET, which a locked session refuses.
+	cfg.DuckLake.RestrictClientSessions = false
 	pair, err := OpenDuckDBPair(cfg, username)
 	if err != nil {
 		return nil, err

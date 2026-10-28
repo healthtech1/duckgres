@@ -254,6 +254,10 @@ func main() {
 		cfg.ProcessIsolation = false
 		slog.Info("Process isolation disabled (not applicable in " + *mode + " mode)")
 	}
+	if *mode != "standalone" && cfg.DuckLake.RestrictClientSessions {
+		cfg.DuckLake.RestrictClientSessions = false
+		slog.Warn("ducklake.restrict_client_sessions ignored (standalone mode only)", "mode", *mode)
+	}
 
 	// Handle duckdb-service mode
 	if *mode == "duckdb-service" {

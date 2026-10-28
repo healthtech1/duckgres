@@ -396,6 +396,10 @@ func New(cfg Config) (*Server, error) {
 		cfg.SessionInitTimeout = DefaultSessionInitTimeout
 	}
 
+	if err := validateRestrictClientSessions(cfg); err != nil {
+		return nil, err
+	}
+
 	if cfg.ACMEDNSProvider != "" && cfg.ACMEDomain == "" {
 		return nil, errors.New("ACME DNS provider requires ACME domain")
 	}
@@ -1120,6 +1124,58 @@ func ConfigureDBConnection(db *sql.DB, cfg Config, duckLakeSem chan struct{}, us
 		}
 	}
 
+	return restrictClientSession(db, cfg)
+}
+
+// restrictClientSession locks a client's DuckDB instance once it is set up,
+// when DuckLake.RestrictClientSessions is on. Each client session has its own
+// instance, so this never affects another client.
+func restrictClientSession(db *sql.DB, cfg Config) error {
+	if !cfg.DuckLake.RestrictClientSessions {
+		return nil
+	}
+	allowedDirs := []string{asDirectory(filepath.Join(cfg.DataDir, "tmp"))}
+	if dataPath := cfg.DuckLake.ObjectStore; dataPath != "" {
+		allowedDirs = append(allowedDirs, asDirectory(dataPath))
+	} else if cfg.DuckLake.DataPath != "" {
+		allowedDirs = append(allowedDirs, asDirectory(cfg.DuckLake.DataPath))
+	}
+	for _, stmt := range ducklake.BuildSessionLockStmts(allowedDirs, []string{ProfilingOutputPath}) {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("restrict client session (%s): %w", stmt, err)
+		}
+	}
+	return nil
+}
+
+// allowed_directories matches by prefix, so a directory without a trailing
+// separator would also allow its siblings ("/data/lake" allows "/data/lake-old").
+func asDirectory(path string) string {
+	sep := string(filepath.Separator)
+	if strings.Contains(path, "://") {
+		sep = "/"
+	}
+	if strings.HasSuffix(path, sep) {
+		return path
+	}
+	return path + sep
+}
+
+// validateRestrictClientSessions refuses features that read outside the paths a
+// restricted session allows, which would otherwise fail on every query.
+func validateRestrictClientSessions(cfg Config) error {
+	if !cfg.DuckLake.RestrictClientSessions {
+		return nil
+	}
+	if cfg.DuckLake.DeltaCatalogEnabled && ducklake.DeltaCatalogPath(cfg.DuckLake) != "" {
+		return errors.New("ducklake.restrict_client_sessions does not support the Delta catalog; set delta_catalog_enabled: false")
+	}
+	if cfg.Iceberg.Enabled {
+		return errors.New("ducklake.restrict_client_sessions does not support Iceberg catalogs")
+	}
+	if hasCacheHTTPFS(cfg.Extensions) {
+		return errors.New("ducklake.restrict_client_sessions does not support the cache_httpfs extension")
+	}
 	return nil
 }
 
@@ -1198,6 +1254,10 @@ func CreatePassthroughDBConnection(cfg Config, duckLakeSem chan struct{}, userna
 			return nil, fmt.Errorf("iceberg catalog configured but attachment failed: %w", err)
 		}
 		slog.Warn("Failed to attach Iceberg catalog.", "user", username, "error", err)
+	}
+	if err := restrictClientSession(db, cfg); err != nil {
+		_ = db.Close()
+		return nil, err
 	}
 
 	return db, nil
@@ -1482,6 +1542,19 @@ func AttachDuckLake(db *sql.DB, dlCfg DuckLakeConfig, sem chan struct{}, dataDir
 	}
 	migrate := dlCfg.Migrate || ducklake.MigrationNeeded(dlCfg.MetadataStore)
 	attachStmt := ducklake.BuildAttachStmt(dlCfg, migrate)
+	if dlCfg.RestrictClientSessions {
+		secretStmt, restrictedAttachStmt, err := ducklake.BuildRestrictedAttachStmts(dlCfg, migrate)
+		if err != nil {
+			return fmt.Errorf("build restricted DuckLake attach: %w", err)
+		}
+		if err := LoadExtensions(db, []string{"postgres_scanner"}); err != nil {
+			return fmt.Errorf("load postgres_scanner for the DuckLake metadata secret: %w", err)
+		}
+		if _, err := db.Exec(secretStmt); err != nil {
+			return fmt.Errorf("create DuckLake metadata secret: %w", err)
+		}
+		attachStmt = restrictedAttachStmt
+	}
 
 	dataPath := dlCfg.ObjectStore
 	if dataPath == "" {
