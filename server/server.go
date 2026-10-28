@@ -396,6 +396,10 @@ func New(cfg Config) (*Server, error) {
 		cfg.SessionInitTimeout = DefaultSessionInitTimeout
 	}
 
+	if err := validateRestrictClientSessions(cfg); err != nil {
+		return nil, err
+	}
+
 	if cfg.ACMEDNSProvider != "" && cfg.ACMEDomain == "" {
 		return nil, errors.New("ACME DNS provider requires ACME domain")
 	}
@@ -1130,19 +1134,47 @@ func restrictClientSession(db *sql.DB, cfg Config) error {
 	if !cfg.DuckLake.RestrictClientSessions {
 		return nil
 	}
-	allowedDirs := []string{
-		filepath.Join(cfg.DataDir, "tmp") + string(filepath.Separator),
-		filepath.Join(cfg.DataDir, "extensions") + string(filepath.Separator),
-	}
+	allowedDirs := []string{asDirectory(filepath.Join(cfg.DataDir, "tmp"))}
 	if dataPath := cfg.DuckLake.ObjectStore; dataPath != "" {
-		allowedDirs = append(allowedDirs, dataPath)
+		allowedDirs = append(allowedDirs, asDirectory(dataPath))
 	} else if cfg.DuckLake.DataPath != "" {
-		allowedDirs = append(allowedDirs, cfg.DuckLake.DataPath)
+		allowedDirs = append(allowedDirs, asDirectory(cfg.DuckLake.DataPath))
 	}
 	for _, stmt := range ducklake.BuildSessionLockStmts(allowedDirs, []string{ProfilingOutputPath}) {
 		if _, err := db.Exec(stmt); err != nil {
 			return fmt.Errorf("restrict client session (%s): %w", stmt, err)
 		}
+	}
+	return nil
+}
+
+// allowed_directories matches by prefix, so a directory without a trailing
+// separator would also allow its siblings ("/data/lake" allows "/data/lake-old").
+func asDirectory(path string) string {
+	sep := string(filepath.Separator)
+	if strings.Contains(path, "://") {
+		sep = "/"
+	}
+	if strings.HasSuffix(path, sep) {
+		return path
+	}
+	return path + sep
+}
+
+// validateRestrictClientSessions refuses features that read outside the paths a
+// restricted session allows, which would otherwise fail on every query.
+func validateRestrictClientSessions(cfg Config) error {
+	if !cfg.DuckLake.RestrictClientSessions {
+		return nil
+	}
+	if cfg.DuckLake.DeltaCatalogEnabled && ducklake.DeltaCatalogPath(cfg.DuckLake) != "" {
+		return errors.New("ducklake.restrict_client_sessions does not support the Delta catalog; set delta_catalog_enabled: false")
+	}
+	if cfg.Iceberg.Enabled {
+		return errors.New("ducklake.restrict_client_sessions does not support Iceberg catalogs")
+	}
+	if hasCacheHTTPFS(cfg.Extensions) {
+		return errors.New("ducklake.restrict_client_sessions does not support the cache_httpfs extension")
 	}
 	return nil
 }

@@ -48,6 +48,10 @@ func TestRestrictClientSessionBlocksAttachFilesAndSettings(t *testing.T) {
 		"re-enable file access":   "SET enable_external_access = true",
 		"unlock the settings":     "SET lock_configuration = false",
 		"reveal secrets":          "SET allow_unredacted_secrets = true",
+		"load an extension":       "LOAD httpfs",
+		"read a sibling of the lake": fmt.Sprintf(
+			"SELECT * FROM read_text('%s')", filepath.Join(strings.TrimSuffix(lakeDir, string(filepath.Separator))+"-other", "f"),
+		),
 	}
 	for name, stmt := range blocked {
 		if _, err := db.Exec(stmt); err == nil {
@@ -63,5 +67,44 @@ func TestRestrictClientSessionDoesNothingWhenOff(t *testing.T) {
 
 	if _, err := db.Exec("SET memory_limit = '1GB'"); err != nil {
 		t.Fatalf("settings should stay changeable when RestrictClientSessions is off: %v", err)
+	}
+}
+
+func TestAsDirectory(t *testing.T) {
+	sep := string(filepath.Separator)
+	cases := map[string]string{
+		"/data/lake":          "/data/lake" + sep,
+		"/data/lake" + sep:    "/data/lake" + sep,
+		"azure://data":        "azure://data/",
+		"azure://data/":       "azure://data/",
+		"s3://bucket/team/dl": "s3://bucket/team/dl/",
+	}
+	for in, want := range cases {
+		if got := asDirectory(in); got != want {
+			t.Errorf("asDirectory(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestValidateRestrictClientSessions(t *testing.T) {
+	restricted := func(edit func(*Config)) Config {
+		cfg := Config{DuckLake: DuckLakeConfig{RestrictClientSessions: true, ObjectStore: "s3://bucket/lake/"}}
+		edit(&cfg)
+		return cfg
+	}
+	cases := map[string]struct {
+		cfg     Config
+		wantErr bool
+	}{
+		"off ignores everything": {Config{DuckLake: DuckLakeConfig{DeltaCatalogEnabled: true, ObjectStore: "s3://bucket/lake/"}, Iceberg: IcebergConfig{Enabled: true}}, false},
+		"plain lake":             {restricted(func(*Config) {}), false},
+		"delta catalog":          {restricted(func(c *Config) { c.DuckLake.DeltaCatalogEnabled = true }), true},
+		"iceberg":                {restricted(func(c *Config) { c.Iceberg.Enabled = true }), true},
+		"cache_httpfs":           {restricted(func(c *Config) { c.Extensions = []string{"cache_httpfs"} }), true},
+	}
+	for name, tc := range cases {
+		if err := validateRestrictClientSessions(tc.cfg); (err != nil) != tc.wantErr {
+			t.Errorf("%s: validateRestrictClientSessions() error = %v, wantErr %v", name, err, tc.wantErr)
+		}
 	}
 }
