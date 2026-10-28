@@ -307,6 +307,9 @@ func ResolveEffective(fileCfg *configloader.FileConfig, cli CLIInputs, getenv fu
 		if fileCfg.DuckLake.DeltaCatalogEnabled != nil {
 			cfg.DuckLake.DeltaCatalogEnabled = *fileCfg.DuckLake.DeltaCatalogEnabled
 		}
+		if fileCfg.DuckLake.RestrictClientSessions != nil {
+			cfg.DuckLake.RestrictClientSessions = *fileCfg.DuckLake.RestrictClientSessions
+		}
 		if fileCfg.DuckLake.DeltaCatalogPath != "" {
 			cfg.DuckLake.DeltaCatalogPath = fileCfg.DuckLake.DeltaCatalogPath
 		}
@@ -604,6 +607,13 @@ func ResolveEffective(fileCfg *configloader.FileConfig, cli CLIInputs, getenv fu
 	}
 	if v := getenv("DUCKGRES_DUCKLAKE_OBJECT_STORE"); v != "" {
 		cfg.DuckLake.ObjectStore = v
+	}
+	if v := getenv("DUCKGRES_DUCKLAKE_RESTRICT_CLIENT_SESSIONS"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			cfg.DuckLake.RestrictClientSessions = b
+		} else {
+			warn("Invalid DUCKGRES_DUCKLAKE_RESTRICT_CLIENT_SESSIONS: " + err.Error())
+		}
 	}
 	if v := getenv("DUCKGRES_DUCKLAKE_DELTA_CATALOG_ENABLED"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {

@@ -124,6 +124,9 @@ type DuckLakeFileConfig struct {
 	DeltaCatalogEnabled *bool  `yaml:"delta_catalog_enabled"`
 	DeltaCatalogPath    string `yaml:"delta_catalog_path"`
 
+	// Attach the metadata store through a DuckDB secret and lock client sessions.
+	RestrictClientSessions *bool `yaml:"restrict_client_sessions"`
+
 	// Disable metadata postgres_scanner thread-local cache before ATTACH creates
 	// the hidden metadata pool. Nil means use the server default.
 	DisableMetadataThreadLocalCache *bool `yaml:"disable_metadata_thread_local_cache"`

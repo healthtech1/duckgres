@@ -15,6 +15,13 @@ type Config struct {
 	// Format: "postgres:host=<host> user=<user> password=<password> dbname=<db>"
 	MetadataStore string
 
+	// RestrictClientSessions attaches a "postgres:" metadata store through a
+	// DuckDB secret, so its password never appears in duckdb_databases(), then
+	// locks each client session: no ATTACH, no file access outside the data,
+	// temp and extension directories, and no changing settings back.
+	// Standalone mode only: the control plane changes settings on live workers.
+	RestrictClientSessions bool
+
 	// DisableMetadataThreadLocalCache disables postgres_scanner thread-local
 	// connection caching for the hidden DuckLake metadata pool as early as
 	// possible, before ATTACH creates that pool. This trades some warm-reuse
